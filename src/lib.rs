@@ -3,6 +3,7 @@
 #[cfg(feature = "csv")]
 pub mod csv;
 pub mod de;
+mod iter;
 #[cfg(feature = "spaces")]
 pub mod spaces;
 
@@ -11,6 +12,8 @@ pub enum Token<T> {
     Item(T),
     SeqStart { len: Option<usize> },
     SeqEnd,
+    MapStart { len: Option<usize> },
+    MapEnd,
     Eof,
 }
 

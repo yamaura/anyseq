@@ -66,7 +66,6 @@ impl<I, L, O> Deserializer<L, I, O> {
     }
 }
 
-//impl<'de, I, L: Lexer<I, Token<&'de str>>> Deserializer<'de, &'de L, I> {
 impl<I, L, O> Deserializer<L, I, O>
 where
     L: Lexer<I, O>,
@@ -92,12 +91,6 @@ where
 
 impl<'de, 'a, I, L: Lexer<I, Token<&'de str>>> serde::de::Deserializer<'de>
     for &'a mut Deserializer<L, I, Token<&'de str>>
-//impl<'de, 'a, L: Lexer<Error=impl serde::de::Error>> serde::de::Deserializer<'de> for &'a mut Deserializer<'de, &'de L> {
-/*
-impl<'de, 'a, L: Lexer, E> serde::de::Deserializer<'de> for &'a mut Deserializer<'de, &'de L, E>
-where
-    E: serde::de::Error + std::convert::From<<L as Lexer>::Error> + std::convert::From<std::num::ParseIntError>,
-    */
 where
     L::Error: std::fmt::Debug,
 {
@@ -156,6 +149,17 @@ where
         visitor.visit_some(self)
     }
 
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        let item = self.peek_item().map_err(Error::LexerError)?;
+        if matches!(item, Token::MapStart { .. }) {
+            self.parse_item().map_err(Error::LexerError)?; // consume the MapStart
+        }
+        visitor.visit_map(&mut MapAccess { de: self })
+    }
+
     fn deserialize_struct<V>(
         self,
         _name: &'static str,
@@ -165,13 +169,23 @@ where
     where
         V: Visitor<'de>,
     {
-        self.deserialize_seq(visitor)
+        use Token::*;
+        let item = self.peek_item().map_err(Error::LexerError)?;
+        match item {
+            Item(_) | SeqStart { .. } => self.deserialize_seq(visitor),
+            MapStart { .. } => self.deserialize_map(visitor),
+            SeqEnd | MapEnd | Eof => Err(Error::InvalidToken(format!("{:?}", item)))?,
+        }
     }
 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
+        let item = self.peek_item().map_err(Error::LexerError)?;
+        if matches!(item, Token::SeqStart { .. }) {
+            self.parse_item().map_err(Error::LexerError)?;
+        }
         visitor.visit_seq(&mut SeqAccess { de: self })
     }
 
@@ -182,10 +196,17 @@ where
         self.deserialize_seq(visitor)
     }
 
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_str(visitor)
+    }
+
     serde::forward_to_deserialize_any! {
         /*bool i32 i64 i128 u8 u16 u32 u64 u128 f32 f64*/ char /*str string*/
         bytes byte_buf /*option*/ unit unit_struct newtype_struct /*tuple*/
-        tuple_struct map enum identifier ignored_any
+        tuple_struct enum ignored_any
     }
 }
 
@@ -193,8 +214,6 @@ struct SeqAccess<'a, L, I, O> {
     de: &'a mut Deserializer<L, I, O>,
 }
 
-//impl<'de, 'a, L: Lexer<Error=impl serde::de::Error>> serde::de::SeqAccess<'de> for &'a mut SeqAccess<'a, 'de, &'de L> {
-//    type Error = L::Error;
 impl<'de, 'a, I, L: Lexer<I, Token<&'de str>>> serde::de::SeqAccess<'de>
     for &'a mut SeqAccess<'a, L, I, Token<&'de str>>
 where
@@ -206,12 +225,10 @@ where
     where
         T: DeserializeSeed<'de>,
     {
+        use Token::*;
         self.de
             .peek_item()
-            .map(|t| match t {
-                Token::SeqEnd | Token::Eof => true,
-                _ => false,
-            })
+            .map(|t| matches!(t, SeqEnd | Eof))
             .map(|t| match t {
                 true => {
                     let _ = self.de.parse_item(); // consume the SeqEnd
@@ -220,6 +237,41 @@ where
                 false => seed.deserialize(&mut *self.de).map(Some),
             })
             .map_err(Error::LexerError)?
+    }
+}
+
+struct MapAccess<'a, L, I, O> {
+    de: &'a mut Deserializer<L, I, O>,
+}
+
+impl<'de, 'a, I, L: Lexer<I, Token<&'de str>>> serde::de::MapAccess<'de>
+    for &'a mut MapAccess<'a, L, I, Token<&'de str>>
+where
+    L::Error: std::fmt::Debug,
+{
+    type Error = Error<L::Error>;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        let item = self.de.peek_item().map_err(Error::LexerError)?;
+        match item {
+            Token::Item(_) => seed.deserialize(&mut *self.de).map(Some),
+            Token::MapEnd => Ok(None),
+            _ => Err(Error::InvalidToken(format!("{:?}", item))),
+        }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let item = self.de.peek_item().map_err(Error::LexerError)?;
+        match item {
+            Token::Item(_) => seed.deserialize(&mut *self.de),
+            _ => Err(Error::InvalidToken(format!("{:?}", item))),
+        }
     }
 }
 
