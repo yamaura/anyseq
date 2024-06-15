@@ -3,7 +3,7 @@
 #[cfg(feature = "csv")]
 pub mod csv;
 pub mod de;
-mod iter;
+pub mod iter;
 #[cfg(feature = "spaces")]
 pub mod spaces;
 
@@ -20,6 +20,5 @@ pub enum Token<T> {
 pub trait Lexer<I, O> {
     type Error;
 
-    //    fn item<'i>(input: &'i mut I) -> Result<Token<&'i O>, Self::Error>;
     fn item(input: &mut I) -> Result<O, Self::Error>;
 }

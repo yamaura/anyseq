@@ -97,11 +97,11 @@ where
     //type Error = serde::de::value::Error;
     type Error = Error<L::Error>;
 
-    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        self.deserialize_str(visitor)
     }
 
     deserialize_fn!(bool);
@@ -174,7 +174,10 @@ where
         match item {
             Item(_) | SeqStart { .. } => self.deserialize_seq(visitor),
             MapStart { .. } => self.deserialize_map(visitor),
-            SeqEnd | MapEnd | Eof => Err(Error::InvalidToken(format!("{:?}", item)))?,
+            SeqEnd | MapEnd | Eof => Err(Error::InvalidToken(format!(
+                "{:?} at deserialize_struct",
+                item
+            )))?,
         }
     }
 
@@ -258,7 +261,10 @@ where
         let item = self.de.peek_item().map_err(Error::LexerError)?;
         match item {
             Token::Item(_) => seed.deserialize(&mut *self.de).map(Some),
-            Token::MapEnd => Ok(None),
+            Token::MapEnd => {
+                let _ = self.de.parse_item(); // consume the MapEnd
+                Ok(None)
+            }
             _ => Err(Error::InvalidToken(format!("{:?}", item))),
         }
     }

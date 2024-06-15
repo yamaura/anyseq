@@ -1,7 +1,7 @@
 use crate::de::{self, Deserializer};
 use crate::{Lexer, Token};
 
-struct TokenIter;
+pub struct TokenIter;
 
 impl<I, O> Lexer<I, Token<O>> for TokenIter
 where
@@ -59,7 +59,7 @@ mod tests {
         let tokens = vec![
             Token::MapStart { len: None },
             Token::Item("age"),
-            Token::Item("11"),
+            Token::Item("21"),
             Token::Item("name"),
             Token::Item("John"),
             Token::MapEnd,
@@ -68,8 +68,39 @@ mod tests {
             from_iter::<Test, _>(tokens.into_iter()).unwrap(),
             Test {
                 name: "John".to_string(),
-                age: 11
+                age: 21
             }
+        );
+
+        let tokens = vec![
+            Token::SeqStart { len: None },
+            Token::MapStart { len: None },
+            Token::Item("name"),
+            Token::Item("John"),
+            Token::Item("age"),
+            Token::Item("21"),
+            Token::MapEnd,
+            Token::MapStart { len: None },
+            Token::Item("name"),
+            Token::Item("Jane"),
+            Token::Item("age"),
+            Token::Item("31"),
+            Token::MapEnd,
+            Token::SeqEnd,
+        ];
+
+        assert_eq!(
+            from_iter::<Vec<Test>, _>(tokens.into_iter()).unwrap(),
+            vec![
+                Test {
+                    name: "John".to_string(),
+                    age: 21
+                },
+                Test {
+                    name: "Jane".to_string(),
+                    age: 31
+                }
+            ]
         );
     }
 }
